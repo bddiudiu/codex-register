@@ -23,9 +23,29 @@ def _normalize_base(api_url: str) -> str:
     return (api_url or "").strip().rstrip("/")
 
 
+def normalize_authorization_token(header_value: str, header_name: str = "Authorization Token") -> str:
+    normalized_value = (header_value or "").strip()
+    if not normalized_value:
+        raise ValueError(f"{header_name} 不能为空")
+    try:
+        normalized_value.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{header_name} 包含非 ASCII 字符，请确认填写的是实际令牌而不是中文说明") from exc
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in normalized_value):
+        raise ValueError(f"{header_name} 包含非法控制字符")
+    return normalized_value
+
+
+def _mask_header_value(header_value: str, keep: int = 4) -> str:
+    if len(header_value) <= keep * 2:
+        return "*" * len(header_value)
+    return f"{header_value[:keep]}...{header_value[-keep:]}"
+
+
 def _build_headers(api_key: str) -> dict:
+    safe_api_key = normalize_authorization_token(api_key)
     return {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {safe_api_key}",
         "New-Api-User": "1",
         "Content-Type": "application/json",
     }
@@ -68,7 +88,7 @@ def upload_to_newapi(
         "auto_ban": 1,
         "name": account.email or "",
         "type": resolved_channel_type,
-        "key": json.dumps({"access_token": account.access_token or "", "account_id": account_name}, ensure_ascii=False),
+        "key": json.dumps({"access_token": account.access_token or "", "account_id": account_name}, ensure_ascii=True),
         "base_url": resolved_channel_base_url,
         "models": resolved_channel_models,
         "multi_key_mode": "random",
@@ -79,10 +99,20 @@ def upload_to_newapi(
     }
 
     try:
+        payload = json.dumps({"mode": "single", "channel": channel}, ensure_ascii=True)
+        headers = _build_headers(api_key)
+        headers["Content-Type"] = "application/json; charset=utf-8"
+
+        logger.info("NEWAPI 上传 URL: %s", url)
+        logger.info("NEWAPI 请求头: %s", {
+            **headers,
+            "Authorization": f"Bearer {_mask_header_value(headers['Authorization'][7:])}",
+        })
+
         resp = cffi_requests.post(
             url,
-            headers=_build_headers(api_key),
-            json={"mode": "single", "channel": channel},
+            headers=headers,
+            data=payload.encode("utf-8"),
             proxies=None,
             timeout=30,
             impersonate="chrome110",

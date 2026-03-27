@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ....database import crud
 from ....database.session import get_db
+from ....core.upload.newapi_upload import normalize_authorization_token
 
 router = APIRouter()
 
@@ -67,6 +68,13 @@ def _to_response(svc) -> NewapiServiceResponse:
     )
 
 
+def _validated_newapi_api_key(api_key: str) -> str:
+    try:
+        return normalize_authorization_token(api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("", response_model=List[NewapiServiceResponse])
 async def list_newapi_services(enabled: Optional[bool] = None):
     with get_db() as db:
@@ -81,7 +89,7 @@ async def create_newapi_service(request: NewapiServiceCreate):
             db,
             name=request.name,
             api_url=request.api_url,
-            api_key=request.api_key,
+            api_key=_validated_newapi_api_key(request.api_key),
             channel_type=request.channel_type,
             channel_base_url=request.channel_base_url,
             channel_models=request.channel_models,
@@ -113,7 +121,7 @@ async def update_newapi_service(service_id: int, request: NewapiServiceUpdate):
         if request.api_url is not None:
             update_data["api_url"] = request.api_url
         if request.api_key:
-            update_data["api_key"] = request.api_key
+            update_data["api_key"] = _validated_newapi_api_key(request.api_key)
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
         if request.priority is not None:

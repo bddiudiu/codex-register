@@ -1296,6 +1296,28 @@ function closeNewapiServiceModal() {
     elements.newapiServiceEditModal.classList.remove('active');
 }
 
+function validateNewapiApiKeyInput(apiKey, { required = false } = {}) {
+    const normalizedApiKey = String(apiKey || '').trim();
+    if (!normalizedApiKey) {
+        if (required) {
+            return '新增服务时 Root Token / API Key 不能为空';
+        }
+        return '';
+    }
+
+    for (const char of normalizedApiKey) {
+        const code = char.charCodeAt(0);
+        if (code > 127) {
+            return 'Root Token / API Key 只能包含 ASCII 字符，请粘贴实际令牌，不要填写中文说明';
+        }
+        if (code < 32 || code === 127) {
+            return 'Root Token / API Key 包含非法控制字符';
+        }
+    }
+
+    return '';
+}
+
 async function editNewapiService(id) {
     try {
         const service = await api.get(`/newapi-services/${id}`);
@@ -1321,8 +1343,9 @@ async function handleSaveNewapiService(e) {
         toast.error('名称和 API URL 不能为空');
         return;
     }
-    if (!id && !apiKey) {
-        toast.error('新增服务时 Root Token / API Key 不能为空');
+    const apiKeyValidationError = validateNewapiApiKeyInput(apiKey, { required: !id });
+    if (apiKeyValidationError) {
+        toast.error(apiKeyValidationError);
         return;
     }
 
